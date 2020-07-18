@@ -1,0 +1,154 @@
+---
+title: "Step2_deg"
+author: "liusheng"
+date: "2020/7/13"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## test data
+### hairpin
+```
+hairpin=read.table('all.counts.hairpin.txt',header = T)
+m1=hairpin[,7:12]
+rownames(m1)=hairpin[,1]
+m1[1:4,1:4]
+colnames(m1)
+m2=read.table('hairpin.txt',header = F,row.names = 1)
+ids=intersect(rownames(m1),rownames(m2))
+overM=cbind(m1[ids,],m2[ids,])
+pheatmap::pheatmap(cor(log2(overM+1)))
+cpmM=log(edgeR::cpm(overM)+1)
+pheatmap::pheatmap(cor(cpmM))
+highM=cpmM[names(tail(sort(apply(cpmM,1,mad)),500)),]
+pheatmap::pheatmap(cor(highM))
+hg1=names(tail(sort(apply(cpmM[,1:6],1,mad)),500))
+hg2=names(tail(sort(apply(cpmM[,7:12],1,mad)),500))
+hg=intersect(hg1,hg2)
+hgM=cpmM[hg,]
+pheatmap::pheatmap(cor(hgM))
+colnames(overM)=NULL
+
+```
+### mature
+```{r}
+rm(list = ls())
+options(stringsAsFactors = F)
+
+datset=read.table('all.counts.mature.hg38_bowtie2.txt',header = T,skip = 1)[,-c(2:5)]
+colnames(datset)=c("miRNA","length",'C1',"N1",'C2',"N2",'C3',"N3",'C4',"N4")
+m1=datset[,-c(1,2)]
+m1
+rownames(m1)=datset[,1]
+m1[1:4,1:4]
+colnames(m1)
+#m2=read.table('mature.txt',header = F,row.names = 1)
+#ids=intersect(rownames(m1),rownames(m2))
+overM=m1#cbind(m1[ids,],m2[ids,])
+pheatmap::pheatmap(cor(log2(overM+1)))
+cpmM=log(edgeR::cpm(overM)+1)
+pheatmap::pheatmap(cor(cpmM))
+highM=cpmM[names(tail(sort(apply(cpmM,1,mad)),800)),]
+pheatmap::pheatmap(cor(highM))
+
+hg1=names(tail(sort(apply(cpmM[,c(1,3,5,7)],1,mad)),500))
+hg2=names(tail(sort(apply(cpmM[,-c(1,3,5,7)],1,mad)),500))
+hg=intersect(hg1,hg2)
+hgM=cpmM[hg,]
+pheatmap::pheatmap(cor(hgM))
+colnames(overM)=NULL
+group_list=rep(c('C',"N"),4)
+exprSet=overM
+
+
+# >
+# 使用 DEGList函数构建limma和edgeR包需要的输入矩阵
+# limma和edgeR的假设都是数据符合正态分布，构建线性模型。
+# 使用model.matrix函数构建分组信息的矩阵，就是将分组信息二值化，用0和1构成的矩阵来代表不同的分组信息。
+
+
+library(edgeR)
+d0 <- DGEList(counts=exprSet)
+#DEG <- edgeR::DGEList(counts=exprSet,group=factor(group_list))
+# 计算标准化因子
+ d0 <- calcNormFactors(d0)
+#注意，这里的calcNormFactors并非进行了标准化，纳入计算了一个参数，用于下游标准化
+cutoff <- 1 # 过滤低表达基因[阈值根据自己需要设定]
+d <- d0[- which(apply(cpm(d0), 1, max) < cutoff),] 
+
+ # Multidimensional scaling (MDS) plot
+suppressMessages(library(RColorBrewer))
+col.group <- as.factor(group_list)
+levels(col.group) <- brewer.pal(nlevels(col.group), "Set1") 
+col.group <- as.character(col.group)
+plotMDS(d, labels=colnames(exprSet), col=col.group) 
+title(main="Sample groups")
+
+library(limma)
+pair_info = factor(unlist(lapply(1:4,function(x)rep(x,2))))
+#构建模型矩阵的区别
+# design <- model.matrix(~factor(group_list))
+# 第一种方法是将第一列的分组信息作为线性模型的截距，第二列开始依次与第一列比较，通过coef参数可以把差异分析结果依次提取出来。
+group_l=as.factor(group_list)
+design <- model.matrix(~0+group_list+pair_info)#
+#design <- model.matrix(~group+pair_info)
+# colnames(design) <- levels(factor(group_list))
+# rownames(design) <- colnames(exprSet)
+#第二种方法，仅仅是分组信息而已，需要通过makeContrasts函数来制作差异比较矩阵控制。
+y <- voom(d0, design, plot = T)
+y <- voom(d, design, plot = T)
+fit <- lmFit(y,design)
+fit
+
+# 通过makeContrasts设置需要进行对比的分组
+contrast.matrix <- makeContrasts(contrasts='group_listC-group_listN',levels =colnames(coef(fit)) ) #
+fit <- contrasts.fit(fit, contrast.matrix) 
+fit2 <- eBayes(fit)
+# allDiff2=topTable(fit2,adjust='fdr',coef=2,number=Inf ,p.value=0.05) 
+# allDiff21=topTable(fit2,adjust='fdr',coef="groupafter",number=Inf ,p.value=0.05)
+## 提取差异结果，注意这里的coef是1
+top.table=topTable(fit2,adjust='fdr',coef=1,number=Inf ,sort.by="P",p.value=0.05) 
+DEG <- na.omit(top.table)
+head(DEG, 5)
+length(which(DEG$adj.P.Val < 0.05 & abs(DEG$logFC)>2 ))
+DEG[which(DEG$adj.P.Val < 0.05 & abs(DEG$logFC)>2 ),]
+
+# 
+# suppressMessages(library(DESeq2))  
+# (colData <- data.frame(row.names=colnames(exprSet), 
+#                        group_list=group_list) )
+# dds <- DESeqDataSetFromMatrix(countData = exprSet,
+#                               colData = colData,
+#                               design = ~ group_list)
+# dds <- DESeq(dds) 
+# res <- results(dds, 
+#                contrast=c("group_list",'C','N'))
+# #DESeq2的差异分析的分组信息设置比较简单，主要通过resuls函数实现
+# # 提取A和B差异分析结果的示例如下，A代表对照组，B代表处理组，
+# # 注意先后顺序，与edgeR正好相反
+# # results(dds, contrast=c("group_list","B","A"))
+# 
+# resOrdered <- res[order(res$padj),]
+# head(resOrdered)
+# DEG =as.data.frame(resOrdered)
+DEG = na.omit(DEG)
+
+df=DEG
+colnames(df)
+df$v= -log10(df$adj.P.Val) #df新增加一列'v',值为-log10(P.Value)
+library(ggpubr)
+ggscatter(df, x = "logFC", y = "v",size=0.5)+ylab('-log10(df$adj.P.Val)')
+logfccutoff=with(df,mean(abs( logFC)) + 0*sd(abs( logFC)) )
+df$g=ifelse(df$adj.P.Val>0.05,'stable', #if 判断：如果这一基因的P.Value>0.01，则为stable基因
+            ifelse( df$logFC > 1 ,'up', #接上句else 否则：接下来开始判断那些P.Value<0.01的基因，再if 判断：如果logFC >1.5,则为up（上调）基因
+                    ifelse( df$logFC < - 1,'down','stable') )#接上句else 否则：接下来开始判断那些logFC <1.5 的基因，再if 判断：如果logFC <1.5，则为down（下调）基因，否则为stable基因
+)
+table(df$g)
+save(df,file = 'deg.rdata')
+df[df$g!='stable',]
+
+```
+

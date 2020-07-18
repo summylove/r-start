@@ -1,0 +1,305 @@
+---
+title: "paper1_上游"
+author: "liusheng"
+date: "2020/7/13"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## 搭建环境
+
+```{bash}
+ls -a
+#cd /mnt/d/projects2/paper1/
+cd /mnt/d/projects2/paper1/18-109AB-smallRNA/
+ls -a
+#conda create -n miRNA
+## 激活环境
+source activate miRNA
+## 查看环境
+#conda info -e
+#conda env list
+## 退出环境
+#conda deactivate
+#source deactivate
+## 安装软件
+#conda install -y -c  bioconda hisat2 bowtie samtools fastp  bowtie2  fastx_toolkit fastqc
+# sra-toolkits,subreads  也可以一并下载   现在featureCounts已经整合在Subread里面
+# conda search fastx_toolkit
+# conda install -y -c  bioconda python3.7
+#conda install python=3.7.7
+#conda install matplotlib=3.0.3
+#conda install -c bioconda -c conda-forge multiqc
+#conda install -c bioconda -c conda-forge samtools openssl=1.0
+#vim ~/.condarc
+#conda install -y subreads
+#conda install samtools=1.5 openssl=1.0 #使用环境外软件
+```
+
+## 下载参考序列
+
+```{bash}
+mkdir -p mnt/e/reference/miRNA
+cd mnt/e/reference/miRNA 
+
+#wget ftp://mirbase.org/pub/mirbase/CURRENT/hairpin.fa.gz   ##　38589　reads
+wget ftp://mirbase.org/pub/mirbase/CURRENT/mature.fa.zip   ##   48885  reads 
+wget ftp://mirbase.org/pub/mirbase/CURRENT/hairpin.fa.zip
+wget ftp://mirbase.org/pub/mirbase/CURRENT/genomes/hsa.gff3  
+
+unzip hairpin.fa.zip
+unzip mature.fa.zip
+
+grep sapiens mature.fa |wc -l  　# 2656 
+grep sapiens hairpin.fa |wc       # 1917 
+
+## Homo sapiens
+perl -alne '{if(/^>/){if(/Homo/){$tmp=1}else{$tmp=0}};next if $tmp!=1;s/U/T/g if !/>/;print }' hairpin.fa > hairpin.human.fa
+perl -alne '{if(/^>/){if(/Homo/){$tmp=1}else{$tmp=0}};next if $tmp!=1;s/U/T/g if !/>/;print }' mature.fa > mature.human.fa
+# 这里值得一提的是miRBase数据库下载的序列，居然都是用U表示的，也就是说就是miRNA序列，而不是转录成该miRNA的基因序列，而我们测序的都是基因序列。
+
+## 针对miRBase数据库下载的序列构建bowtie索引
+
+cd /mnt/e/reference/miRNA 
+ bowtie-build mature.human.fa hsa-mature-bowtie-index
+ bowtie-build hairpin.human.fa hsa-hairpin-bowtie-index
+ 
+cd /mnt/e/reference/
+#不建议从NCBI下载使用基因组；从UCSC\ensembl下载对应版本的基因组和注释就好；
+#现在可以与Bowtie或Bowtie 2一起使用Bowtie 2索引。# http://bowtie-bio.sourceforge.net/index.shtml
+# wget http://hgdownload.cse.ucsc.edu/goldenPath/hg38/bigZips/hg38.fa.gz
+gzip -d /mnt/e/reference/hg38.fa.gz 
+ nohup wget http://hgdownload.cse.ucsc.edu/goldenPath/hg38/bigZips/hg38.fa.gz  &
+ bowtie2-build /mnt/e/reference/hg38.fa hg38 --threads 5 1>hg38.bowtie2.log 2>hg38.bowtie2.error &
+#Total time for backward call to driver() for mirror index: 00:18:53
+```
+
+## 获得fq数据
+```
+mkdir -p ~/reference/miRNA
+cd ~/reference/miRNA 
+# step1 : download raw data
+mkdir miRNA_test && cd miRNA_test
+echo {14..19} |sed 's/ /\n/g' |while read id; \
+do (~/biosoft/sratoolkit/sratoolkit.2.8.2-1-centos_linux64/bin/prefetch SRR15427${id}  )   ;\
+done
+# 下面是另外一个课题，可以参考比较
+echo {44..59} |sed 's/ /\n/g' |while read id; \
+do (~/biosoft/sratoolkit/sratoolkit.2.8.2-1-centos_linux64/bin/prefetch SRR77077${id}  )   ;\
+done
+# 另外，这样的下载方式，在中国大陆会非常慢！！！
+# 建议换成aspera哈
+dump=/home/yb77613/biosoft/sratoolkit/sratoolkit.2.8.2-1-centos_linux64/bin/fastq-dump
+echo {14..19} |sed 's/ /\n/g' |while read id; \
+do (  $dump -O ./  --gzip --split-3  SRR15427${id}   )   ;\
+done
+```
+```{bash}
+ls /mnt/d/projects2/paper1/18-109AB-smallRNA/*gz |while read id
+do
+echo $id 
+gzip -d $id
+done
+
+ls /mnt/d/projects2/paper1/18-109AB-smallRNA/*fasta |while read id
+do
+echo $id 
+/mnt/e/code/bbmap/reformat.sh in=$id out=${id%%.*}_qfake.fq qfake=35
+done
+```
+
+## 数据质控 
+***清洗前后，都走一下fastqc图表，清洗主要是fastx_toolkit修剪***
+**已用cutadapt/fastx_tools进行质控**
+```{bash}
+ls /mnt/d/projects2/paper1/18-109AB-smallRNA/*fq |while read id
+do
+echo $id 
+fastqc  $id 
+done
+#zcat  $id| fastq_quality_filter -v -q 20 -p 80 -Q33  -i - -o tmp ;
+#fastx_trimmer -v -f 1 -l 27 -m 15  -i tmp  -Q33 -z -o ${id%%.*}_clean.fq.gz ;
+# fastqc  ${id%%.*}_clean.fq.gz  
+multiqc *_fastqc.zip
+```
+>#运行一次查看是否可以成功运行
+#fastq_quality_filter 代表根据质量过滤序列
+#-v,即verbose,报告序列的数目
+#-q,即quality,保留碱基所要求的最小质量评分，低于此值将会去除
+#-p,即percent,即序列中超过最小质量评分的碱基数目的最小百分率，低于这个比率将删除
+#-Q33,即phred33,默认是按照phred64作为参考的
+#-i,即infile,代表输入文件，注意不能是压缩文件，可以是FASTA/FASTQ都行。默认是STDIN，即标准输入
+#-o,即outfile,代表输出文件（注意不是output dir即输出目录，此处输出是一个文件而不是文件夹），默认是STDOUT即标准输出，指定则输出到指定文件
+fastq_quality_filter -v -q 20 -p 80 -Q33 -i SRR1542714.1.fastq -o tmp   #生成第一步处理的临时文件
+># 中间文件是 tmp ，到时候可以删除掉。
+>#fastx_trimmer 代表缩短FASTQ或FASTQ文件中的读数，根据质量修剪（剪切）序列。
+#-v,即verbose,报告序列的数目
+#-f,即first,代表保留第几个碱基，默认是保留第一个
+#-l,即last,代表保留最后的碱基，默认是整个reads
+#-i,即infile,代表输入文件，注意不能是压缩文件，可以是FASTA/FASTQ都行。默认是STDIN，即标准输入
+#-z,即compress,代表的是使用Gzip压缩输出
+#-o,即outfile,代表输出文件（注意不是output dir即输出目录，此处输出是一个文件而不是文件夹），默认是STDOUT即标准输出，指定则输出到指定文件
+fastx_trimmer -v -f 1 -l 27 -i tmp -Q33 -z -o SRR1542714.1_clean.fq.gz  #生成最后的文件
+
+
+
+
+## 比对
+
+>对miRNA-seq数据有两条比对策略
+1.下载miRBase数据库里面的已知miRNA序列来进行比对
+2.直接比对到参考基因组（某些人类的是hg19 / hg38）
+前面的比对非常简单，而且很容易就可以数出已经的所以miRNA序列的表达量；
+后面的比对有点耗时，而且算表达量的时候也不是很方便，
+但是它的优点是可以来预测新的miRNA
+
+# 比对 ***miRBase数据库下载的序列***
+ 
+```
+cd /mnt/d/projects2/paper1/18-109AB-smallRNA/
+source activate miRNA
+mature=/mnt/e/reference/miRNA/hsa-mature-bowtie-index
+hairpin=/mnt/e/reference/miRNA/hsa-hairpin-bowtie-index
+ls  /mnt/d/projects2/paper1/18-109AB-smallRNA/*_qfake.fq |while read id
+do
+echo $id  
+bowtie  -n 0 -m1 --best --strata $mature $id -S ${id}_n2matrue.sam 
+bowtie  -n 0 -m1 --best --strata $hairpin $id  -S ${id}_n2hairpin.sam  
+done
+```
+```
+le read id ;do (samtools sort -O bam -@ 5  -o $(basename ${id} ".sam").bam   ${id});done
+rm *.sam 
+```
+```
+cd /mnt/d/projects2/paper1/18-109AB-smallRNA/
+ls *n2matrue.sam|while read id ;do (samtools sort -O bam -@ 5  -o $(basename ${id} ".sam").bam   ${id});done
+#rm *n2matrue.sam 
+```
+>使用miRNA序列比对的推荐参数：-n 0 -m1 --best --strata
+比对率还是蛮低的，但是可以调整参数（允许错配碱基）的数量。
+
+## 定量
+***批量走 samtools idxstats 得到表达量矩阵：***
+```
+cd /mnt/d/projects2/paper1/18-109AB-smallRNA/
+ls *.bam |xargs -i samtools index {}
+ls *.bam|while read id ;do (samtools idxstats ${id} > ${id}.txt );done
+# samtools view  matrue.bam |cut -f 3 |sort |uniq  -c
+# samtools view A1_qfake.fq_n1matrue.bam |cut -f 3 |sort |uniq  -c|sort |tail -n 10
+```
+>用TAB分隔，每行包括参考序列名称，序列长度，映射的读取段和未映射的读取段
+
+## 整合表达矩阵
+```
+
+ls *matrue.bam.txt | while read id ; do( cp${id} /mnt/d/projects2/paper1/${id}.txt);done
+
+```
+### n0
+```
+cd /mnt/d/projects2/paper1/18-109AB-smallRNA/
+#less A1_qfake.fq_matrue.bam.txt
+ls *_matrue.bam.txt
+paste *_matrue.bam.txt >all.n0_mature.count.txt
+#less all.n1_mature.count.txt
+cut -f 1,2,3,7,11,15,19,23,27,31 all.n0_mature.count.txt > all.n0_mature.count_merge.txt
+less all.n0_mature.count_merge.txt |head -n 10
+```
+### n1
+```
+cd /mnt/d/projects2/paper1/18-109AB-smallRNA/
+#less A1_qfake.fq_matrue.bam.txt
+paste *_n1matrue.bam.txt >all.n1_mature.count.txt
+#less all.n1_mature.count.txt
+cut -f 1,2,3,7,11,15,19,23,27,31 all.n1_mature.count.txt > all.n1_mature.count_merge.txt
+less all.n1_mature.count_merge.txt |head -n 10
+```
+### n2
+
+```
+cd /mnt/d/projects2/paper1/18-109AB-smallRNA/
+#less A1_qfake.fq_matrue.bam.txt
+paste *_n2matrue.bam.txt >all.n2_mature.count.txt
+#less all.n1_mature.count.txt
+cut -f 1,2,3,7,11,15,19,23,27,31 all.n2_mature.count.txt > all.n2_mature.count_merge.txt
+less all.n2_mature.count_merge.txt |head -n 10
+cp all.n2_mature.count_merge.txt /mnt/d/projects2/paper1/all.n2_mature.count_merge.txt
+``` 
+
+# 比对 ***到hg38***
+
+30w reads
+>来自Illumina MiSeq / NextSeq 500的原始数据已转换为fastq格式。然后将文件导出到Genboree Workbench的exceRpt小RNA序列管道（版本4.6.2），以读取映射到hg38人类基因组版本[ 31 ]。这允许低至18个核苷酸的单个错配碱基。适配器修整后，通过FASTQC评估读取质量，以过滤出质量分数低于PHRED等级30的读取。如[ 26 ] 所述，首先将读物映射到UniVec和人核糖体RNA（rRNA）序列以排除它们，然后再映射到miRBase 21版，gtRNAdb和piRNABank数据库，分别将读物分配给miRNA，tRNA和piRNA [ 26 ]。
+
+>http://bowtie-bio.sourceforge.net/bowtie2/faq.shtml
+
+
+```
+cd /mnt/d/projects2/paper1/18-109AB-smallRNA/
+source activate miRNA
+index=/mnt/e/reference/hg38
+
+ls  /mnt/d/projects2/paper1/18-109AB-smallRNA/*_qfake.fq |while read id
+do
+echo $id  
+bowtie  -n 0 -m1 --best --strata $index $id -S ${id}_hg38_bowtie.sam 
+done
+#bowtie -q -v 2 -l 10 -k 15
+
+
+ls *_hg38_bowtie.sam|while read id ;do (samtools sort -O bam -@ 5  -o $(basename ${id} ".sam").bam   ${id});done
+
+gtf=/mnt/e/reference/miRNA/hsa.gff3
+
+featureCounts -T 4 -F gff  -M -t miRNA -g Name  -a $gtf -o all.counts.mature.hg38_bowtie.txt   *hg38_bowtie.sam 1>counts.mature.log 2>&1 
+
+#featureCounts -T 4 -F gff  -M -t miRNA_primary_transcript  -g Name  -a $gtf -o all.counts.hairpin.txt   *genome* 1>counts.hairpin.log 2>&1 
+```
+```{bash include=FALSE}
+cd /mnt/d/projects2/paper1/18-109AB-smallRNA/
+source activate miRNA
+index=/mnt/e/reference/hg38
+ls /mnt/d/projects2/paper1/18-109AB-smallRNA/*_qfake.fq |while read id
+do
+echo $id
+bowtie2 -p 4 -x $index -U $id | samtools sort -@ 4 -o ${id}_hg38_bowtie2.bam 
+done
+ls *_hg38_bowtie2.bam
+#ls *_hg38_bowtie2.sam|while read id ;do (samtools sort -O bam -@ 5  -o $(basename ${id} ".sam").bam   ${id});done
+
+gtf=/mnt/e/reference/miRNA/hsa.gff3
+
+featureCounts -T 4 -F gff  -M -t miRNA -g Name  -a $gtf -o all.counts.mature.hg38_bowtie2.txt   *hg38_bowtie2.bam 1>counts.mature.log 2>&1 
+
+cp /mnt/d/projects2/paper1/18-109AB-smallRNA/all.counts.mature.hg38_bowtie2.txt /mnt/d/projects2/paper1/all.counts.mature.hg38_bowtie2.txt
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
