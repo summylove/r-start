@@ -37,7 +37,7 @@ colnames(overM)=NULL
 ```{r}
 rm(list = ls())
 options(stringsAsFactors = F)
-
+#test
 datset=read.table('all.counts.mature.hg38_bowtie2.txt',header = T,skip = 1)[,-c(2:5)]
 colnames(datset)=c("miRNA","length",'C1',"N1",'C2',"N2",'C3',"N3",'C4',"N4")
 m1=datset[,-c(1,2)]
