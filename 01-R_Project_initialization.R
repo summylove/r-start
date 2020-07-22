@@ -1,7 +1,5 @@
 rm(list=ls())
 
-load("D:/projects/paper1/revised2/revised2/genemodule_AF.Rdata")
-
 options(stringsAsFactors = FALSE) #禁止chr转成factor
 Sys.setlocale("LC_ALL","English") #Sys.setenv(LANGUAGE = "en") 
 #Sys.setlocale("LC_COLLATE", "C")
