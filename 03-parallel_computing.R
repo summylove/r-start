@@ -19,7 +19,7 @@ length(xml_contents(msigdb))
 #save(msigdb,file = 'msigdb.Rdata')
 as.character(xml_attrs(xml_child(msigdb, 1))[["STANDARD_NAME"]])
 require(snowfall)
-sfInit(parallel=TRUE, cpus=6)
+sfInit(parallel=TRUE, cpus=5)
 sfLibrary(xml2)
 sfExport('genesetidtrans')
 genesetidtrans <- sfLapply(1:26860, function(x){#
@@ -52,8 +52,8 @@ paste(unlist(strsplit(as.character(genesetidtrans2$STANDARD_NAME[1]),'_')[[1]])[
 genesetidtrans2$term=unlist(lapply(genesetidtrans2$STANDARD_NAME,function(x){
   paste(unlist(strsplit(as.character(x),'_')[[1]])[-1],collapse = '_')
 }))
+genesetidtrans2$EXACT_SOURCE
+genesetidtrans2$EXACT_SOURCE[genesetidtrans2$EXACT_SOURCE==""]=genesetidtrans2$SYSTEMATIC_NAME[genesetidtrans2$EXACT_SOURCE==""]
 
 
-
-
-#save(genesetidtrans,genesetidtrans2,file = "genesetidtrans.Rdata")
+#save(genesetidtrans,genesetidtrans2,file = "genesetidtrans2.Rdata")
