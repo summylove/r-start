@@ -308,7 +308,7 @@ test=GO_AllLists[match(FINAL_GO$GO,GO_AllLists$GO),]
 test$`#GeneInGOAndHitList` - test$`#GeneInGO`
 #####################################
 
-#save(GO_AllLists_1_2_3_4_5_6_7_8,GO_AllLists_1_2_3_4_5_6_7_8_9_nop,file = 'pathwayset.Rdata')
+#save(GO_AllLists_1_2_3_4_5_6_7_8,GO_AllLists_1_2_3_4_5_6_7_8_9_nop,file = 'pathwayset.gmtsource.Rdata')
 #save(test,file='top_pathwayset.Rdata')
 
 ##########
