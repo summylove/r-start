@@ -114,3 +114,25 @@ genelist <-idtrans(genelist,'id')
   browseURL(entrezGeneQuery('APP'))
 
 }
+
+
+
+library(biomaRt)
+
+human = useMart("ensembl", dataset = "hsapiens_gene_ensembl")
+listAttributes(human)[251:300,]
+
+mouse = useMart("ensembl", dataset = "mmusculus_gene_ensembl")
+class(mouse)
+
+ids2 = getLDS(attributes = c("mgi_symbol"), filters = "mgi_symbol",
+              values = ids$symbol,mart = mouse, 
+              
+              attributesL = c("hgnc_symbol","entrezgene_id",'external_gene_name'),
+              martL = human,
+              uniqueRows=T)
+ids2=na.omit(ids2)
+ids2=ids2[ids2$HGNC.symbol!='',]
+
+
+
