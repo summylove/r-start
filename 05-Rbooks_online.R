@@ -16,7 +16,10 @@
 ##流程 workflows
 #https://www.stephaniehicks.com/2018-bioinfosummer-scrnaseq/index.html #单细胞RNA序列数据分析：2018 BioInfoSummer Workshop
 #http://qiubio.com/new/book/chapter-02/#%E5%86%85%E5%AE%B9content #使用Bioconductor成熟软件包分析基因芯片数据，测序数据等
+#https://osca.bioconductor.org/cell-cycle-assignment.html
 
 ## 可视化
 #https://jokergoo.github.io/circlize_book/book/  #R中的环形可视化 祖光谷
 #https://wencke.github.io/ #GOplot软件包专注于生物数据的可视化。更准确地说，该软件包将帮助将表达数据与功能分析的结果进行合并和整合。
+
+
